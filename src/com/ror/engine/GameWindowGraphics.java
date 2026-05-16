@@ -708,6 +708,10 @@ final class GameWindowGraphics {
             return;
         }
 
+        if (hero instanceof Gunner) {
+            sprite = trimTransparentBounds(sprite);
+        }
+
         battlePanel.getBattleHeroSpriteLabel().setText("");
         battlePanel.getBattleHeroSpriteLabel().setIcon(createScaledSpriteIcon(sprite, getHeroSpriteSize(hero), getHeroSpriteSize(hero)));
         refreshBattleSpriteLabel(battlePanel.getBattleHeroSpriteLabel());
@@ -741,7 +745,11 @@ final class GameWindowGraphics {
     }
 
     boolean updateHeroUltimateFrame(Hero hero, BattlePanel battlePanel, int frameIndex) {
-        String sheetName = hero instanceof Gunner ? "Fehld-Ultimate.png" : "Neo-Ultimate.png";
+        String sheetName = hero instanceof Mage
+                ? "Mleux-Ultimate.png"
+                : hero instanceof Gunner
+                ? "Fehld-Ultimate.png"
+                : "Neo-Ultimate.png";
         return updateHeroActionFrame(hero, battlePanel, sheetName, frameIndex);
     }
 
@@ -1683,6 +1691,8 @@ final class GameWindowGraphics {
 
             String mageSheetPath = "Mleux-Skill1.png".equals(sheetName)
                     ? "mleux/skills/skill1/skill1main.png"
+                    : "Mleux-Ultimate.png".equals(sheetName)
+                    ? "mleux/skills/ulti/ulti.png"
                     : "Mleux-Attack.png".equals(sheetName)
                     ? "mleux/skills/basic attack/basic-attack.png"
                     : "mleux/skills/" + sheetName;

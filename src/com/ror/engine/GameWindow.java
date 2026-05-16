@@ -2864,18 +2864,24 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         if (!requireHero()) return;
         if (!hero.hasUnlockedArea1()) { showInfoSync("Forest of Reverie", "Forest of Reverie is still locked."); return; }
         startAreaAdventureAsync(this::startForestOfReverieAdventure);
+        SoundManager.stopMusic();
+        SoundManager.playMusic("src/com/ror/models/assets/sounds/forestOfReverie.wav");
     }
 
     private void launchArea2() {
         if (!requireHero()) return;
         if (!hero.hasUnlockedArea2()) { showInfoSync("Reverie's Edge", "Reverie's Edge is still locked."); return; }
         startAreaAdventureAsync(this::startReveriesEdgeAdventure);
+        SoundManager.stopMusic();
+        SoundManager.playMusic("src/com/ror/models/assets/sounds/reverieLands.wav");
     }
 
     private void launchArea3() {
         if (!requireHero()) return;
         if (!hero.hasUnlockedArea3()) { showInfoSync("Forsaken Lands", "Forsaken Lands is still locked."); return; }
         startAreaAdventureAsync(this::startForsakenLandsAdventure);
+        SoundManager.stopMusic();
+        SoundManager.playMusic("src/com/ror/models/assets/sounds/forsakenLands.wav");
     }
 
     private void startAreaAdventureAsync(Runnable adventureTask) {
@@ -3005,6 +3011,10 @@ public class GameWindow implements BattlePanel.BattleActionListener {
 
         for (int i = 0; i < encounters.length; i++) {
             Entity enemy = encounters[i];
+            if (enemy instanceof Kim) {
+                SoundManager.stopMusic();
+                SoundManager.playMusic("src/com/ror/models/assets/sounds/finalBoss.wav");
+            }
             showAreaBattleContext(areaName, enemy, enemy.getName() + " blocks your path.");
             int proceed = showConfirmSync(areaName, enemy.getName() + "\nStart battle?");
             if (proceed != 0) { showInfoSync(areaName, "Adventure cancelled."); return false; }
@@ -3740,6 +3750,9 @@ public class GameWindow implements BattlePanel.BattleActionListener {
     }
 
     private void showScreen(String screenName) {
+        if (SCREEN_MAIN.equals(screenName)) {
+            playAdventureOverviewMusic();
+        }
         screenLayout.show(screenPanel, screenName);
 
         boolean isBattleScreen = SCREEN_BATTLE.equals(screenName);
@@ -3795,6 +3808,11 @@ public class GameWindow implements BattlePanel.BattleActionListener {
 
     private boolean isShopHeaderActive() {
         return headerPanel != null && COLOR_SHOP_OUTSIDE.equals(headerPanel.getBackground());
+    }
+
+    private void playAdventureOverviewMusic() {
+        SoundManager.stopMusic();
+        SoundManager.playMusic("src/com/ror/models/assets/sounds/titleScreen.wav");
     }
 
     // -------------------------------------------------------------------------
