@@ -239,6 +239,8 @@ public final class Load {
                 field.setAccessible(true);
                 if (type == int.class) {
                     field.setInt(target, Integer.parseInt(raw));
+                } else if (type == long.class) {
+                    field.setLong(target, Long.parseLong(raw));
                 } else if (type == boolean.class) {
                     field.setBoolean(target, Boolean.parseBoolean(raw));
                 } else if (type == String.class) {
@@ -251,7 +253,7 @@ public final class Load {
     }
 
     private static boolean isSupportedType(Class<?> type) {
-        return type == int.class || type == boolean.class || type == String.class;
+        return type == int.class || type == long.class || type == boolean.class || type == String.class;
     }
 
     public static final class SlotInfo {

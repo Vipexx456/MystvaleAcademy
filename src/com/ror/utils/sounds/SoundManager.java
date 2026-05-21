@@ -10,11 +10,20 @@ public class SoundManager {
     private static Clip bgmClip;
     private static Clip sfxClip;
     private static int masterVolume = 100;
+    private static String currentMusicPath;
 
     public static void playMusic(String path) { //music loops
+        if (path != null && path.equals(currentMusicPath) && bgmClip != null && bgmClip.isOpen()) {
+            if (!bgmClip.isRunning()) {
+                bgmClip.loop(Clip.LOOP_CONTINUOUSLY);
+                bgmClip.start();
+            }
+            return;
+        }
         stopMusic();
         bgmClip = loadClip(path);
         if (bgmClip != null) {
+            currentMusicPath = path;
             applyVolume(bgmClip);
             bgmClip.loop(Clip.LOOP_CONTINUOUSLY);
             bgmClip.start();
@@ -71,7 +80,9 @@ public class SoundManager {
         if (bgmClip != null) {
             bgmClip.stop();
             bgmClip.close();
+            bgmClip = null;
         }
+        currentMusicPath = null;
     }
 
     public static void stopSfx() {

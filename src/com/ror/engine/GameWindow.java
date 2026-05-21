@@ -6,6 +6,7 @@ import com.ror.models.Boss.*;
 import com.ror.models.Inventory.Inventory;
 import com.ror.models.Mobs.*;
 import com.ror.models.training.StatProgress;
+import com.ror.utils.LeaderboardManager;
 import com.ror.utils.sounds.SoundManager;
 import java.awt.*;
 import java.awt.event.*;
@@ -2163,6 +2164,7 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         inventoryNarrationShown = false;
         hero.setHpCap(hero.getHp());
         hero.setManaCap(hero.getMana());
+        initializeLeaderboardRun(hero);
         refreshHeroDashboard();
         refreshInventoryPanel();
         refreshProfilePanel();
@@ -2184,6 +2186,7 @@ public class GameWindow implements BattlePanel.BattleActionListener {
                 if (overwrite != JOptionPane.YES_OPTION) return;
             }
 
+            syncLeaderboardRunProgress();
             Load.saveGame(hero, slot);
             Load.SlotInfo savedSlot = Load.getSlotInfo(slot);
             showInfoSync("Game Saved", savedSlot.getSummary());
@@ -2207,6 +2210,7 @@ public class GameWindow implements BattlePanel.BattleActionListener {
             inventoryNarrationShown = hero.hasOpenedInventory();
             currentStorySequence = new String[0];
             currentStoryIndex = 0;
+            resumeLeaderboardRun(hero);
             refreshHeroDashboard();
             refreshInventoryPanel();
             refreshProfilePanel();
@@ -2273,6 +2277,272 @@ public class GameWindow implements BattlePanel.BattleActionListener {
 
         refreshAreaButtons();
         refreshJourneyStatus();
+    }
+
+    private void initializeLeaderboardRun(Hero targetHero) {
+        if (targetHero == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        targetHero.setLeaderboardRunStartedAtMillis(now);
+        targetHero.setLeaderboardAccumulatedMillis(0L);
+        targetHero.setLeaderboardSessionStartedAtMillis(now);
+        targetHero.setLeaderboardArea1ClearMillis(0L);
+        targetHero.setLeaderboardArea2ClearMillis(0L);
+        targetHero.setLeaderboardArea3ClearMillis(0L);
+        targetHero.setLeaderboardRecorded(false);
+    }
+
+    private void resumeLeaderboardRun(Hero targetHero) {
+        if (targetHero == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (targetHero.getLeaderboardRunStartedAtMillis() <= 0L) {
+            targetHero.setLeaderboardRunStartedAtMillis(now);
+        }
+        if (targetHero.getLeaderboardSessionStartedAtMillis() <= 0L) {
+            targetHero.setLeaderboardSessionStartedAtMillis(now);
+        }
+    }
+
+    private long getCurrentLeaderboardElapsedMillis() {
+        if (hero == null) {
+            return 0L;
+        }
+        long elapsed = Math.max(0L, hero.getLeaderboardAccumulatedMillis());
+        long sessionStarted = hero.getLeaderboardSessionStartedAtMillis();
+        if (sessionStarted > 0L) {
+            elapsed += Math.max(0L, System.currentTimeMillis() - sessionStarted);
+        }
+        return elapsed;
+    }
+
+    private long syncLeaderboardRunProgress() {
+        if (hero == null) {
+            return 0L;
+        }
+        long now = System.currentTimeMillis();
+        long elapsed = getCurrentLeaderboardElapsedMillis();
+        hero.setLeaderboardAccumulatedMillis(elapsed);
+        hero.setLeaderboardSessionStartedAtMillis(now);
+        if (hero.getLeaderboardRunStartedAtMillis() <= 0L) {
+            hero.setLeaderboardRunStartedAtMillis(now);
+        }
+        return elapsed;
+    }
+
+    private void recordAreaClearTime(int areaIndex) {
+        if (hero == null) {
+            return;
+        }
+        long elapsed = syncLeaderboardRunProgress();
+        if (areaIndex == 1 && hero.getLeaderboardArea1ClearMillis() <= 0L) {
+            hero.setLeaderboardArea1ClearMillis(elapsed);
+        } else if (areaIndex == 2 && hero.getLeaderboardArea2ClearMillis() <= 0L) {
+            hero.setLeaderboardArea2ClearMillis(elapsed);
+        } else if (areaIndex == 3 && hero.getLeaderboardArea3ClearMillis() <= 0L) {
+            hero.setLeaderboardArea3ClearMillis(elapsed);
+        }
+    }
+
+    private void recordLeaderboardCompletionIfNeeded() {
+        if (hero == null || hero.isLeaderboardRecorded()) {
+            return;
+        }
+        try {
+            long totalElapsed = syncLeaderboardRunProgress();
+            if (hero.getLeaderboardArea1ClearMillis() <= 0L) {
+                hero.setLeaderboardArea1ClearMillis(totalElapsed);
+            }
+            if (hero.getLeaderboardArea2ClearMillis() <= 0L) {
+                hero.setLeaderboardArea2ClearMillis(totalElapsed);
+            }
+            if (hero.getLeaderboardArea3ClearMillis() <= 0L) {
+                hero.setLeaderboardArea3ClearMillis(totalElapsed);
+            }
+            LeaderboardManager.recordCompletion(
+                    hero,
+                    hero.getLeaderboardArea1ClearMillis(),
+                    hero.getLeaderboardArea2ClearMillis(),
+                    hero.getLeaderboardArea3ClearMillis(),
+                    totalElapsed);
+            hero.setLeaderboardRecorded(true);
+        } catch (IOException exception) {
+            showWarningSync("Leaderboard", "Clear recorded, but leaderboard save failed: " + exception.getMessage());
+        }
+    }
+
+    private void showVictoryLeaderboardSync() {
+        runOnEdtSync(() -> {
+            if (frame == null) {
+                return;
+            }
+
+            BufferedImage leaderboardImage = graphics.getLeaderboardOverlayImage();
+            java.util.List<LeaderboardManager.Entry> entries = LeaderboardManager.loadEntries();
+            JDialog dialog = new JDialog(frame, "Leaderboard", true);
+            dialog.setUndecorated(true);
+            dialog.setBackground(new Color(0, 0, 0, 0));
+
+            JComponent panel = new JComponent() {
+                private static final int IMAGE_BASE_WIDTH = 1536;
+                private static final int IMAGE_BASE_HEIGHT = 1024;
+                private static final Rectangle CLOSE_BOX = new Rectangle(1410, 58, 72, 72);
+                private static final int TABLE_START_Y = 383;
+                private static final int TABLE_ROW_HEIGHT = 57;
+                private static final int MAX_ROWS = 10;
+                private static final int RANK_CENTER_X = 98;
+                private static final int FOREST_CENTER_X = 404;
+                private static final int EDGE_CENTER_X = 742;
+                private static final int FORSAKEN_CENTER_X = 1056;
+                private static final int OVERALL_CENTER_X = 1330;
+                private final Rectangle closeBounds = new Rectangle();
+                private boolean hoveringClose;
+
+                {
+                    MouseAdapter mouseHandler = new MouseAdapter() {
+                        @Override
+                        public void mouseMoved(MouseEvent event) {
+                            boolean hovering = closeBounds.contains(event.getPoint());
+                            if (hoveringClose != hovering) {
+                                hoveringClose = hovering;
+                                setCursor(hovering
+                                        ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                                        : Cursor.getDefaultCursor());
+                                repaint();
+                            }
+                        }
+
+                        @Override
+                        public void mouseExited(MouseEvent event) {
+                            hoveringClose = false;
+                            setCursor(Cursor.getDefaultCursor());
+                            repaint();
+                        }
+
+                        @Override
+                        public void mouseClicked(MouseEvent event) {
+                            if (closeBounds.contains(event.getPoint())) {
+                                dialog.dispose();
+                            }
+                        }
+                    };
+                    addMouseMotionListener(mouseHandler);
+                    addMouseListener(mouseHandler);
+                }
+
+                @Override
+                protected void paintComponent(Graphics graphicsContext) {
+                    Graphics2D g2 = (Graphics2D) graphicsContext.create();
+                    g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                    g2.setColor(new Color(0, 0, 0, 185));
+                    g2.fillRect(0, 0, getWidth(), getHeight());
+
+                    if (leaderboardImage == null) {
+                        g2.setColor(Color.WHITE);
+                        g2.setFont(getHeadingFont(24f));
+                        g2.drawString("Leaderboard image not found.", Math.max(30, getWidth() / 2 - 160), getHeight() / 2);
+                        g2.dispose();
+                        return;
+                    }
+
+                    double scale = Math.min(
+                            Math.min(getWidth() / (double) leaderboardImage.getWidth(),
+                                    getHeight() / (double) leaderboardImage.getHeight()),
+                            1d);
+                    int drawWidth = Math.max(1, (int) Math.round(leaderboardImage.getWidth() * scale));
+                    int drawHeight = Math.max(1, (int) Math.round(leaderboardImage.getHeight() * scale));
+                    int drawX = (getWidth() - drawWidth) / 2;
+                    int drawY = (getHeight() - drawHeight) / 2;
+                    g2.drawImage(leaderboardImage, drawX, drawY, drawWidth, drawHeight, null);
+
+                    double scaleX = drawWidth / (double) IMAGE_BASE_WIDTH;
+                    double scaleY = drawHeight / (double) IMAGE_BASE_HEIGHT;
+                    int closeX = drawX + (int) Math.round(CLOSE_BOX.x * scaleX);
+                    int closeY = drawY + (int) Math.round(CLOSE_BOX.y * scaleY);
+                    int closeWidth = Math.max(22, (int) Math.round(CLOSE_BOX.width * scaleX));
+                    int closeHeight = Math.max(22, (int) Math.round(CLOSE_BOX.height * scaleY));
+                    closeBounds.setBounds(closeX, closeY, closeWidth, closeHeight);
+
+                    if (hoveringClose) {
+                        g2.setColor(new Color(255, 255, 255, 22));
+                        g2.fillRoundRect(closeX, closeY, closeWidth, closeHeight, 14, 14);
+                    }
+
+                    if (entries.isEmpty()) {
+                        g2.setColor(new Color(232, 240, 255, 210));
+                        Font emptyFont = getBodyFont((float) Math.max(18d, 24d * Math.min(scaleX, scaleY))).deriveFont(Font.BOLD);
+                        g2.setFont(emptyFont);
+                        String text = "No legends recorded yet.";
+                        FontMetrics metrics = g2.getFontMetrics(emptyFont);
+                        int centerX = drawX + (int) Math.round(IMAGE_BASE_WIDTH * scaleX / 2d);
+                        int centerY = drawY + (int) Math.round(IMAGE_BASE_HEIGHT * scaleY * 0.54d);
+                        g2.drawString(text, centerX - (metrics.stringWidth(text) / 2), centerY);
+                        g2.dispose();
+                        return;
+                    }
+
+                    Font timeFont = getBodyFont((float) Math.max(16d, 22d * Math.min(scaleX, scaleY))).deriveFont(Font.BOLD);
+                    Font nameFont = getBodyFont((float) Math.max(11d, 14d * Math.min(scaleX, scaleY))).deriveFont(Font.PLAIN);
+                    Font rankFont = getBodyFont((float) Math.max(16d, 22d * Math.min(scaleX, scaleY))).deriveFont(Font.BOLD);
+                    int tableStartY = drawY + (int) Math.round(TABLE_START_Y * scaleY);
+                    int rowHeight = Math.max(34, (int) Math.round(TABLE_ROW_HEIGHT * scaleY));
+
+                    for (int index = 0; index < Math.min(MAX_ROWS, entries.size()); index++) {
+                        LeaderboardManager.Entry entry = entries.get(index);
+                        int rowCenterY = tableStartY + (index * rowHeight);
+
+                        drawLeaderboardCellText(g2, String.valueOf(index + 1),
+                                drawX + (int) Math.round(RANK_CENTER_X * scaleX),
+                                rowCenterY + (int) Math.round(5 * scaleY),
+                                rankFont, new Color(242, 245, 255, 235));
+                        drawLeaderboardCellText(g2, entry.heroName(),
+                                drawX + (int) Math.round(FOREST_CENTER_X * scaleX),
+                                rowCenterY - 9,
+                                nameFont, new Color(190, 210, 255, 210));
+                        drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.forestMillis()),
+                                drawX + (int) Math.round(FOREST_CENTER_X * scaleX),
+                                rowCenterY + 12,
+                                timeFont, new Color(242, 245, 255, 235));
+                        drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.edgeMillis()),
+                                drawX + (int) Math.round(EDGE_CENTER_X * scaleX),
+                                rowCenterY + (int) Math.round(5 * scaleY),
+                                timeFont, new Color(242, 245, 255, 232));
+                        drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.forsakenMillis()),
+                                drawX + (int) Math.round(FORSAKEN_CENTER_X * scaleX),
+                                rowCenterY + (int) Math.round(5 * scaleY),
+                                timeFont, new Color(242, 245, 255, 232));
+                        drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.overallMillis()),
+                                drawX + (int) Math.round(OVERALL_CENTER_X * scaleX),
+                                rowCenterY + (int) Math.round(5 * scaleY),
+                                timeFont, new Color(255, 245, 212, 240));
+                    }
+
+                    g2.dispose();
+                }
+            };
+
+            panel.setPreferredSize(frame.getSize());
+            dialog.setContentPane(panel);
+            dialog.pack();
+            dialog.setSize(frame.getSize());
+            dialog.setLocationRelativeTo(frame);
+            dialog.setVisible(true);
+        });
+    }
+
+    private void drawLeaderboardCellText(Graphics2D g2, String text, int centerX, int baselineY, Font font, Color color) {
+        g2.setFont(font);
+        FontMetrics metrics = g2.getFontMetrics(font);
+        int drawX = centerX - (metrics.stringWidth(text) / 2);
+        g2.setColor(new Color(9, 12, 28, 180));
+        g2.drawString(text, drawX + 1, baselineY + 1);
+        g2.setColor(color);
+        g2.drawString(text, drawX, baselineY);
     }
 
     private void refreshAreaButtons() {
@@ -2479,7 +2749,7 @@ public class GameWindow implements BattlePanel.BattleActionListener {
 
         int questChoice;
         if (hasQuest1 && hasQuest2) {
-            Object[] options = { "Lost Book Quest", "Riddle Quest", "Back" };
+            Object[] options = { "Lost Book Quest", "Riddle Quest" };
             questChoice = showOptionSync("Library", "Choose a library quest.", options, options[0]);
         } else if (hasQuest1) {
             questChoice = 0;
@@ -2533,18 +2803,23 @@ public class GameWindow implements BattlePanel.BattleActionListener {
 
         while (true) {
             Object[] options = {
-                    hero.hasFinishedEndurance() ? "Endurance (Done)" : "Endurance",
-                    hero.hasFinishedStrength() ? "Strength (Done)" : "Strength",
-                    hero.hasFinishedDurability() ? "Durability (Done)" : "Durability",
-                    hero.hasFinishedManaRefinement() ? "Mana Refinement (Done)" : "Mana Refinement",
-                    "Quit Training"
+                    hero.hasFinishedEndurance() ? "Endurance Cleared" : "Endurance",
+                    hero.hasFinishedStrength() ? "Strength Cleared" : "Strength",
+                    hero.hasFinishedDurability() ? "Durability Cleared" : "Durability",
+                    hero.hasFinishedManaRefinement() ? "Mana Cleared" : "Mana Refinement"
+            };
+            boolean[] enabled = {
+                    !hero.hasFinishedEndurance(),
+                    !hero.hasFinishedStrength(),
+                    !hero.hasFinishedDurability(),
+                    !hero.hasFinishedManaRefinement()
             };
 
             int choice = showOptionSync("Training Ground",
                     "Complete all 4 trainings to unlock eligibility for Forest of Reverie.",
-                    options, options[0]);
+                    options, enabled, options[0]);
 
-            if (choice == 4 || choice == -1) {
+            if (choice == -1) {
                 if (hero.getNumberOfTrainingFinished() > 0 && hero.getNumberOfTrainingFinished() < 4) {
                     int confirm = showConfirmSync("Training Ground", "Quit now? Incomplete training progress will reset.");
                     if (confirm == 0) {
@@ -2773,7 +3048,16 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         int start = showConfirmSync("Training Ground", "Start " + taskName + " challenge?");
         if (start != 0) return;
 
-        boolean success = random.nextInt(10) <= 7;
+        TrainingInstructionDialog.showDialog(frame, getHeadingFont(30f), getBodyFont(16f), taskName,
+                getTrainingInstructions(taskName));
+
+        boolean success = switch (taskName) {
+            case "Endurance" -> EnduranceTrainingDialog.showDialog(frame, getHeadingFont(30f), getBodyFont(16f));
+            case "Strength" -> StrengthTrainingDialog.showDialog(frame, getHeadingFont(30f), getBodyFont(16f));
+            case "Durability" -> DurabilityTrainingDialog.showDialog(frame, getHeadingFont(30f), getBodyFont(16f));
+            case "Mana Refinement" -> ManaRefinementDialog.showDialog(frame, getHeadingFont(30f), getBodyFont(16f));
+            default -> random.nextInt(10) <= 7;
+        };
         if (success) {
             markComplete.run();
             hero.setNumberOfTrainingFinished(hero.getNumberOfTrainingFinished() + 1);
@@ -2781,6 +3065,37 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         } else {
             showInfoSync("Training Ground", taskName + " failed. Try again.");
         }
+    }
+
+    private String[] getTrainingInstructions(String taskName) {
+        return switch (taskName) {
+            case "Endurance" ->
+                    new String[] {
+                            "Hold SPACE or the mouse button to resist the drift.",
+                            "Keep the core inside the safe zone.",
+                            "Slip out too many times and you fail."
+                    };
+            case "Strength" ->
+                    new String[] {
+                            "Press SPACE or click when the ember meets the rune.",
+                            "Land enough clean hits to clear the trial.",
+                            "Mistime too many strikes and you fail."
+                    };
+            case "Durability" ->
+                    new String[] {
+                            "Watch the impact line move toward the shield.",
+                            "Hold only when it reaches the bright window.",
+                            "Release after the hit to recover.",
+                            "Too many cracks and you fail."
+                    };
+            case "Mana Refinement" ->
+                    new String[] {
+                            "Tap SPACE or click to raise the mana level.",
+                            "Keep the flow inside the safe zone.",
+                            "Stabilize it long enough to clear the trial."
+                    };
+            default -> new String[] { "Complete the trial objective to pass." };
+        };
     }
 
     private void resetTrainingProgress() {
@@ -2943,6 +3258,7 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         if (!runAreaAdventure("Forest of Reverie", encounters, goldRewards, xpRewards)) return;
 
         hero.setHaveDefeatedArea1Boss(true);
+        recordAreaClearTime(1);
         hero.unlockArea2(true);
         showInfoSync("Area Cleared", "Forest of Reverie cleared.\nVisit Principal's Office to process Area 2 eligibility.");
     }
@@ -2962,6 +3278,7 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         if (!runAreaAdventure("Reverie's Edge", encounters, goldRewards, xpRewards)) return;
 
         hero.setHaveDefeatedArea2Boss(true);
+        recordAreaClearTime(2);
         hero.unlockArea3(true);
         showInfoSync("Area Cleared", "Reverie's Edge cleared.\nVisit Principal's Office to process Area 3 eligibility.");
     }
@@ -2981,13 +3298,16 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         if (!runAreaAdventure("Forsaken Lands", encounters, goldRewards, xpRewards)) return;
 
         hero.setHaveDefeatedArea3Boss(true);
+        recordAreaClearTime(3);
 
         Object[] options = { "Sacrifice and Return", "Refuse and Repeat Cycle" };
         int endingChoice = showOptionSync("Final Choice", "Kim Morvain has fallen.\nChoose your fate:", options, options[0]);
 
         if (endingChoice == 0) {
             playNarrationSequence("Final Ending", Narration.buildSacrificeEndingNarration());
+            recordLeaderboardCompletionIfNeeded();
             showInfoSync("Ending", "You sacrificed your character and returned to the real world.\nYou cleared the game.");
+            showVictoryLeaderboardSync();
         } else {
             playNarrationSequence("Loop Ending", Narration.buildLoopEndingNarration());
             hero.resetAllProgress();
@@ -3390,6 +3710,11 @@ public class GameWindow implements BattlePanel.BattleActionListener {
     }
 
     private void playHeroActionAnimation(int actionNumber) {
+        if (hero instanceof Mage && actionNumber == 1) {
+            playMageSkill1Animation();
+            return;
+        }
+
         int[] offsets = (hero instanceof Mage || hero instanceof Gunner)
                 ? new int[] { 0, 0, 0 }
                 : new int[] { 70, 130, 70 };
@@ -3415,6 +3740,35 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         }
 
         runOnEdtSync(() -> {
+            battlePanel.setHeroSpriteOffsetX(0);
+            battlePanel.clearBattleEffect();
+            updateHeroSprite();
+        });
+        sleepQuietly(60);
+    }
+
+    private void playMageSkill1Animation() {
+        float[] effectProgress = { 0.18f, 0.5f, 0.84f };
+        for (int frameIndex = 0; frameIndex < 3; frameIndex++) {
+            final int currentFrame = frameIndex;
+            final boolean[] frameShown = { false };
+            runOnEdtSync(() -> {
+                battlePanel.setHeroSpriteOffsetX(0);
+                frameShown[0] = graphics.updateHeroSkill1Frame(hero, battlePanel, currentFrame);
+                graphics.updateMageSkill1EffectFrame(battlePanel, currentFrame, effectProgress[currentFrame]);
+            });
+            if (!frameShown[0]) {
+                runOnEdtSync(() -> {
+                    battlePanel.clearBattleEffect();
+                    battlePanel.setHeroSpriteOffsetX(0);
+                });
+                return;
+            }
+            sleepQuietly(120);
+        }
+
+        runOnEdtSync(() -> {
+            battlePanel.clearBattleEffect();
             battlePanel.setHeroSpriteOffsetX(0);
             updateHeroSprite();
         });
@@ -3811,7 +4165,6 @@ public class GameWindow implements BattlePanel.BattleActionListener {
     }
 
     private void playAdventureOverviewMusic() {
-        SoundManager.stopMusic();
         SoundManager.playMusic("src/com/ror/models/assets/sounds/titleScreen.wav");
     }
 
@@ -3853,6 +4206,16 @@ public class GameWindow implements BattlePanel.BattleActionListener {
     private int showOptionSync(String title, String message, Object[] options, Object initial) {
         final int[] choice = { -1 };
         runOnEdtSync(() -> { if (overlay != null) choice[0] = overlay.showOptions(title, message, options, initial); });
+        return choice[0];
+    }
+
+    private int showOptionSync(String title, String message, Object[] options, boolean[] enabledStates, Object initial) {
+        final int[] choice = { -1 };
+        runOnEdtSync(() -> {
+            if (overlay != null) {
+                choice[0] = overlay.showOptions(title, message, options, initial, enabledStates);
+            }
+        });
         return choice[0];
     }
 

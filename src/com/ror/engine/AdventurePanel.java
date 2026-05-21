@@ -23,7 +23,10 @@ public class AdventurePanel extends JComponent {
     private final Font headingFont;
     private final Font bodyFont;
     private final JPanel dialogBox;
+    private final JPanel headerPanel;
+    private final Component headerSpacer;
     private final JLabel titleLabel;
+    private final JButton closeButton;
     private final JLabel messageLabel;
     private final JPanel buttonPanel;
     private volatile int selectedIndex = -1;
@@ -33,6 +36,8 @@ public class AdventurePanel extends JComponent {
     private int optionRowCount = 1;
     private float renderAlpha = 1f;
     private boolean slotChooserMode;
+    private boolean trainingGridMode;
+    private boolean instructionDialogMode;
     private boolean closeWithFade = true;
     private boolean fadeAnimating;
     private String fullMessage = "";
@@ -57,6 +62,52 @@ public class AdventurePanel extends JComponent {
         titleLabel.setForeground(DIALOG_TEXT);
         titleLabel.setFont(headingFont.deriveFont(Font.BOLD, headingFont.getSize2D()));
 
+        closeButton = new JButton("X") {
+            @Override
+            protected void paintComponent(Graphics graphics) {
+                Graphics2D graphics2D = (Graphics2D) graphics.create();
+                graphics2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                ButtonModel model = getModel();
+                Color fill = getBackground();
+                if (model.isPressed()) {
+                    fill = BUTTON_BG_PRESSED;
+                } else if (model.isRollover()) {
+                    fill = BUTTON_BG_HOVER;
+                }
+                graphics2D.setColor(fill);
+                graphics2D.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
+                graphics2D.dispose();
+                super.paintComponent(graphics);
+            }
+
+            @Override
+            protected void paintBorder(Graphics graphics) {
+                Graphics2D graphics2D = (Graphics2D) graphics.create();
+                graphics2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                graphics2D.setColor(BUTTON_BORDER);
+                graphics2D.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
+                graphics2D.dispose();
+            }
+        };
+        closeButton.setFocusable(false);
+        closeButton.setForeground(BUTTON_TEXT);
+        closeButton.setBackground(BUTTON_BG);
+        closeButton.setRolloverEnabled(true);
+        closeButton.setOpaque(false);
+        closeButton.setContentAreaFilled(false);
+        closeButton.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+        closeButton.setFocusPainted(false);
+        closeButton.setFont(bodyFont.deriveFont(Font.BOLD, Math.max(13f, bodyFont.getSize2D())));
+        closeButton.setPreferredSize(new Dimension(34, 30));
+        closeButton.addActionListener(event -> closeOverlay(JOptionPane.CLOSED_OPTION));
+
+        headerSpacer = Box.createRigidArea(closeButton.getPreferredSize());
+        headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setOpaque(false);
+        headerPanel.add(headerSpacer, BorderLayout.WEST);
+        headerPanel.add(titleLabel, BorderLayout.CENTER);
+        headerPanel.add(closeButton, BorderLayout.EAST);
+
         messageLabel = new JLabel("", SwingConstants.CENTER);
         messageLabel.setForeground(DIALOG_TEXT);
         messageLabel.setFont(bodyFont.deriveFont(Font.PLAIN, bodyFont.getSize2D()));
@@ -67,7 +118,7 @@ public class AdventurePanel extends JComponent {
         buttonPanel.setOpaque(false);
         buttonPanel.setLayout(new BorderLayout());
 
-        dialogBox.add(titleLabel, BorderLayout.NORTH);
+        dialogBox.add(headerPanel, BorderLayout.NORTH);
         dialogBox.add(messageLabel, BorderLayout.CENTER);
         dialogBox.add(buttonPanel, BorderLayout.SOUTH);
 
@@ -123,8 +174,9 @@ public class AdventurePanel extends JComponent {
             dialogWidth = 760;
             dialogHeight = 360;
         } else {
-            dialogWidth = optionButtonCount > 4 ? 820 : 680;
-            dialogHeight = optionRowCount > 1 ? 330 : 260;
+            dialogWidth = instructionDialogMode ? 820
+                    : trainingGridMode ? 700 : optionButtonCount == 3 ? 780 : optionButtonCount == 4 ? 760 : optionButtonCount > 4 ? 820 : 680;
+            dialogHeight = instructionDialogMode ? 360 : trainingGridMode ? 320 : optionRowCount > 1 ? 308 : 292;
         }
 
         dialogBox.setSize(
@@ -155,6 +207,10 @@ public class AdventurePanel extends JComponent {
     }
 
     public int showOptions(String title, String message, Object[] options, Object initial) {
+        return showOptions(title, message, options, initial, null);
+    }
+
+    public int showOptions(String title, String message, Object[] options, Object initial, boolean[] enabledStates) {
         String[] labels = new String[options.length];
         for (int i = 0; i < options.length; i++) {
             labels[i] = String.valueOf(options[i]);
@@ -168,7 +224,7 @@ public class AdventurePanel extends JComponent {
                 }
             }
         }
-        return showDialog(title, message, labels, defaultIndex, true, true);
+        return showDialog(title, message, labels, enabledStates, defaultIndex, true, true);
     }
 
     public int showSlotChooser(String title, String prompt, Load.SlotInfo[] slots, boolean allowEmptySlots) {
@@ -184,6 +240,7 @@ public class AdventurePanel extends JComponent {
 
         slotChooserMode = true;
         titleLabel.setText(title);
+        closeButton.setVisible(true);
         fullMessage = prompt == null ? "" : prompt;
         messageLabel.setText(formatMessage(fullMessage));
         defaultOptionIndex = 0;
@@ -209,11 +266,16 @@ public class AdventurePanel extends JComponent {
 
     private int showDialog(String title, String message, String[] buttons, int defaultButtonIndex, boolean fadeIn,
             boolean fadeOut) {
+        return showDialog(title, message, buttons, null, defaultButtonIndex, fadeIn, fadeOut);
+    }
+
+    private int showDialog(String title, String message, String[] buttons, boolean[] enabledStates, int defaultButtonIndex,
+            boolean fadeIn, boolean fadeOut) {
         if (!SwingUtilities.isEventDispatchThread()) {
             final int[] result = new int[1];
             try {
                 SwingUtilities.invokeAndWait(
-                        () -> result[0] = showDialog(title, message, buttons, defaultButtonIndex, fadeIn, fadeOut));
+                        () -> result[0] = showDialog(title, message, buttons, enabledStates, defaultButtonIndex, fadeIn, fadeOut));
             } catch (InterruptedException | InvocationTargetException ignored) {
             }
             return result[0];
@@ -221,12 +283,16 @@ public class AdventurePanel extends JComponent {
 
         slotChooserMode = false;
         titleLabel.setText(title);
+        trainingGridMode = "Training Ground".equals(title) && buttons.length == 4;
+        instructionDialogMode = title != null && title.endsWith(" Instructions");
+        closeButton.setVisible(trainingGridMode);
         fullMessage = message == null ? "" : message;
         messageLabel.setText(formatMessage(""));
+        messageLabel.setVerticalAlignment(instructionDialogMode ? SwingConstants.TOP : SwingConstants.CENTER);
         defaultOptionIndex = Math.max(0, Math.min(defaultButtonIndex, buttons.length - 1));
         selectedIndex = -1;
         closeWithFade = fadeOut;
-        populateButtons(buttons);
+        populateButtons(buttons, enabledStates);
 
         setVisible(true);
         window.getGlassPane().setVisible(true);
@@ -234,10 +300,20 @@ public class AdventurePanel extends JComponent {
         requestFocusInWindow();
         if (fadeIn) {
             setRenderAlpha(0f);
-            startOverlayFadeIn(() -> startMessageTypewriter(fullMessage));
+            startOverlayFadeIn(() -> {
+                if (instructionDialogMode) {
+                    messageLabel.setText(formatMessage(fullMessage));
+                } else {
+                    startMessageTypewriter(fullMessage);
+                }
+            });
         } else {
             setRenderAlpha(1f);
-            startMessageTypewriter(fullMessage);
+            if (instructionDialogMode) {
+                messageLabel.setText(formatMessage(fullMessage));
+            } else {
+                startMessageTypewriter(fullMessage);
+            }
         }
 
         secondaryLoop = Toolkit.getDefaultToolkit().getSystemEventQueue().createSecondaryLoop();
@@ -248,23 +324,24 @@ public class AdventurePanel extends JComponent {
         return selectedIndex;
     }
 
-    private void populateButtons(String[] buttons) {
+    private void populateButtons(String[] buttons, boolean[] enabledStates) {
         buttonPanel.removeAll();
         optionButtonCount = Math.max(1, buttons.length);
-        int columns = Math.min(4, optionButtonCount);
+        int columns = trainingGridMode ? 2 : optionButtonCount == 4 ? 2 : optionButtonCount >= 5 ? 3 : Math.min(4, optionButtonCount);
         optionRowCount = (int) Math.ceil(optionButtonCount / (double) columns);
 
         JPanel rows = new JPanel();
         rows.setOpaque(false);
         rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
+        rows.setBorder(BorderFactory.createEmptyBorder(trainingGridMode ? 6 : 0, 0, 22, 0));
         JPanel currentRow = null;
 
         for (int i = 0; i < buttons.length; i++) {
             if (i % columns == 0) {
                 if (i > 0) {
-                    rows.add(Box.createVerticalStrut(10));
+                    rows.add(Box.createVerticalStrut(trainingGridMode ? 16 : 14));
                 }
-                currentRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
+                currentRow = new JPanel(new FlowLayout(FlowLayout.CENTER, trainingGridMode ? 18 : 14, 0));
                 currentRow.setOpaque(false);
                 currentRow.setAlignmentX(Component.CENTER_ALIGNMENT);
                 rows.add(currentRow);
@@ -277,7 +354,9 @@ public class AdventurePanel extends JComponent {
                     graphics2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                     ButtonModel model = getModel();
                     Color fill = getBackground();
-                    if (model.isPressed()) {
+                    if (!isEnabled()) {
+                        fill = new Color(20, 19, 28, 235);
+                    } else if (model.isPressed()) {
                         fill = BUTTON_BG_PRESSED;
                     } else if (model.isRollover()) {
                         fill = BUTTON_BG_HOVER;
@@ -292,7 +371,7 @@ public class AdventurePanel extends JComponent {
                 protected void paintBorder(Graphics graphics) {
                     Graphics2D graphics2D = (Graphics2D) graphics.create();
                     graphics2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    graphics2D.setColor(BUTTON_BORDER);
+                    graphics2D.setColor(isEnabled() ? BUTTON_BORDER : new Color(78, 76, 92, 95));
                     graphics2D.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
                     graphics2D.dispose();
                 }
@@ -306,7 +385,14 @@ public class AdventurePanel extends JComponent {
             button.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
             button.setFocusPainted(false);
             button.setFont(bodyFont.deriveFont(Font.BOLD, Math.max(14f, bodyFont.getSize2D())));
-            button.setPreferredSize(new Dimension(150, 44));
+            int preferredWidth = trainingGridMode ? 184 : Math.max(150, Math.min(210, 84 + (buttons[i].length() * 7)));
+            int preferredHeight = trainingGridMode ? 56 : 56;
+            button.setPreferredSize(new Dimension(preferredWidth, preferredHeight));
+            boolean enabled = enabledStates == null || i >= enabledStates.length || enabledStates[i];
+            button.setEnabled(enabled);
+            if (!enabled) {
+                button.setForeground(new Color(133, 132, 147));
+            }
             button.addActionListener(e -> closeOverlay(index));
             currentRow.add(button);
         }
@@ -552,8 +638,34 @@ public class AdventurePanel extends JComponent {
         if (message == null) {
             return "";
         }
+        if (instructionDialogMode) {
+            return formatInstructionMessage(message);
+        }
         String html = escapeHtml(message).replace("\n", "<br>");
         return "<html><div style='text-align:center;margin:0px;padding:0px;'>" + html + "</div></html>";
+    }
+
+    private String formatInstructionMessage(String message) {
+        String[] lines = message.split("\\n");
+        StringBuilder html = new StringBuilder();
+        html.append("<html><div style='text-align:center;width:680px;margin:0 auto;padding:6px 10px 2px 10px;'>");
+        for (int i = 0; i < lines.length; i++) {
+            String line = escapeHtml(lines[i].trim());
+            if (line.isEmpty()) {
+                continue;
+            }
+            if (i == 0) {
+                html.append("<div style='font-size:18px;font-weight:bold;margin-bottom:14px;'>")
+                        .append(line)
+                        .append("</div>");
+            } else {
+                html.append("<div style='font-size:15px;line-height:1.55;margin-bottom:8px;'>")
+                        .append(line)
+                        .append("</div>");
+            }
+        }
+        html.append("</div></html>");
+        return html.toString();
     }
 
     private String escapeHtml(String text) {

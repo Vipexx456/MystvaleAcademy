@@ -22,8 +22,8 @@ public class BattlePanel extends JPanel {
     private final JLabel battleHeroNameValue = new JLabel("-");
     private final JLabel battleHeroLevelValue = new JLabel("Level -");
     private final JLabel battleEnemyNameValue = new JLabel("-");
-    private final JLabel battleHeroSpriteLabel = new JLabel(
-            new ImageIcon("src/com/ror/models/assets/images/heroes/placeholder.png"));
+    private final JLabel battleHeroSpriteLabel = new JLabel();
+    private final JLabel battleEffectSpriteLabel = new JLabel("", SwingConstants.CENTER);
     private final JLabel battleEnemySpriteLabel = new JLabel(
             createBattleSpriteIcon("src/com/ror/models/assets/images/enemies/goblin.png", 72));
     private final JProgressBar battleHeroHpBar = new JProgressBar();
@@ -44,6 +44,8 @@ public class BattlePanel extends JPanel {
     private boolean battleButtonsVisible = true;
     private int heroSpriteOffsetX;
     private int enemySpriteOffsetX;
+    private float battleEffectProgress = -1f;
+    private int battleEffectVerticalOffset;
     private BufferedImage battleArenaBackgroundImage;
 
     // Colors
@@ -157,7 +159,7 @@ public class BattlePanel extends JPanel {
         attackPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(COLOR_BATTLE_BUTTON_BORDER, 1),
                 BorderFactory.createEmptyBorder(16, 16, 16, 16)));
-        JPanel attackRow = new JPanel(new GridLayout(1, 3, 18, 0));
+        JPanel attackRow = new JPanel(new GridLayout(1, 3, 22, 0));
         attackRow.setOpaque(false);
         JButton battleAttackButton = createBattleButton("Attack");
         battleAttackButton.addActionListener(e -> actionListener.onBattleAction(0));
@@ -352,10 +354,7 @@ public class BattlePanel extends JPanel {
     private Rectangle getBattleButtonSourceBounds(String text, BufferedImage image) {
         return switch (text) {
             case "Fight", "Inventory", "Run" -> new Rectangle(0, 0, image.getWidth(), image.getHeight());
-            case "Attack" -> new Rectangle(6, 12, 298, 153);
-            case "Skill 1" -> new Rectangle(0, 12, 277, 153);
-            case "Skill 2" -> new Rectangle(0, 12, 321, 153);
-            case "Ultimate" -> new Rectangle(6, 0, 970, 128);
+            case "Attack", "Skill 1", "Skill 2", "Ultimate" -> new Rectangle(0, 0, image.getWidth(), image.getHeight());
             default -> new Rectangle(0, 0, image.getWidth(), image.getHeight());
         };
     }
@@ -365,10 +364,10 @@ public class BattlePanel extends JPanel {
             case "Fight" -> "fight_button_panel.png";
             case "Inventory" -> "inventory_button_panel.png";
             case "Run" -> "run_button_panel.png";
-            case "Attack" -> "attack_button_panel.png";
-            case "Skill 1" -> "skill1_button_panel.png";
-            case "Skill 2" -> "skill2_button_panel.png";
-            case "Ultimate" -> "ultimate_button_panel.png";
+            case "Attack" -> "combat_attack_button_arcane.png";
+            case "Skill 1" -> "combat_skill1_button_arcane.png";
+            case "Skill 2" -> "combat_skill2_button_arcane.png";
+            case "Ultimate" -> "combat_ultimate_button_arcane.png";
             default -> null;
         };
         if (fileName == null) {
@@ -495,6 +494,7 @@ public class BattlePanel extends JPanel {
             @Override
             public void doLayout() {
                 Dimension heroSize = battleHeroSpriteLabel.getPreferredSize();
+                Dimension effectSize = battleEffectSpriteLabel.getPreferredSize();
                 Dimension enemySize = battleEnemySpriteLabel.getPreferredSize();
                 int groundY = Math.max(12, getHeight() - 44);
                 int heroX = Math.max(34, Math.round((getWidth() * 0.44f) - (heroSize.width / 2f)) + heroSpriteOffsetX);
@@ -510,6 +510,22 @@ public class BattlePanel extends JPanel {
                         Math.max(8, groundY - enemySize.height),
                         enemySize.width,
                         enemySize.height);
+                if (battleEffectSpriteLabel.isVisible() && effectSize.width > 0 && effectSize.height > 0) {
+                    int heroCenterX = heroX + Math.round(heroSize.width * 0.58f);
+                    int enemyCenterX = enemyX + Math.round(enemySize.width * 0.18f);
+                    int effectCenterX = Math.round(heroCenterX
+                            + ((enemyCenterX - heroCenterX) * Math.max(0f, Math.min(1f, battleEffectProgress))));
+                    int heroTopY = Math.max(8, groundY - heroSize.height);
+                    int effectY = Math.max(8,
+                            heroTopY + (heroSize.height / 2) - (effectSize.height / 2) - 20 + battleEffectVerticalOffset);
+                    battleEffectSpriteLabel.setBounds(
+                            effectCenterX - (effectSize.width / 2),
+                            effectY,
+                            effectSize.width,
+                            effectSize.height);
+                } else {
+                    battleEffectSpriteLabel.setBounds(0, 0, 0, 0);
+                }
             }
         };
         battleSpriteStrip.setOpaque(true);
@@ -518,12 +534,16 @@ public class BattlePanel extends JPanel {
         battleHeroSpriteLabel.setHorizontalAlignment(SwingConstants.LEFT);
         battleHeroSpriteLabel.setVerticalAlignment(SwingConstants.CENTER);
         battleHeroSpriteLabel.setSize(battleHeroSpriteLabel.getPreferredSize());
+        battleEffectSpriteLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        battleEffectSpriteLabel.setVerticalAlignment(SwingConstants.CENTER);
+        battleEffectSpriteLabel.setVisible(false);
         battleEnemySpriteLabel.setHorizontalAlignment(SwingConstants.RIGHT);
         battleEnemySpriteLabel.setVerticalAlignment(SwingConstants.CENTER);
         battleEnemySpriteLabel.setSize(battleEnemySpriteLabel.getPreferredSize());
 
         battleSpriteStrip.add(battleHeroSpriteLabel);
         battleSpriteStrip.add(battleEnemySpriteLabel);
+        battleSpriteStrip.add(battleEffectSpriteLabel);
         arena.add(battleSpriteStrip, BorderLayout.CENTER);
 
         return arena;
@@ -662,6 +682,25 @@ public class BattlePanel extends JPanel {
     public void resetBattleSpriteOffsets() {
         heroSpriteOffsetX = 0;
         enemySpriteOffsetX = 0;
+        refreshBattleSpriteLayout();
+    }
+
+    public void setBattleEffectIcon(Icon icon, float progress, int verticalOffset) {
+        battleEffectProgress = progress;
+        battleEffectVerticalOffset = verticalOffset;
+        battleEffectSpriteLabel.setText("");
+        battleEffectSpriteLabel.setIcon(icon);
+        battleEffectSpriteLabel.setSize(battleEffectSpriteLabel.getPreferredSize());
+        battleEffectSpriteLabel.setVisible(icon != null);
+        refreshBattleSpriteLayout();
+    }
+
+    public void clearBattleEffect() {
+        battleEffectProgress = -1f;
+        battleEffectVerticalOffset = 0;
+        battleEffectSpriteLabel.setIcon(null);
+        battleEffectSpriteLabel.setText("");
+        battleEffectSpriteLabel.setVisible(false);
         refreshBattleSpriteLayout();
     }
 
