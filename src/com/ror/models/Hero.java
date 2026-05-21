@@ -899,6 +899,13 @@ public class Hero {
     private boolean swordmanCharacterChosen = false;
     private boolean gunnerCharacterChosen = false;
     private boolean mageCharacterChosen = false;
+    private long leaderboardRunStartedAtMillis = 0L;
+    private long leaderboardAccumulatedMillis = 0L;
+    private long leaderboardSessionStartedAtMillis = 0L;
+    private long leaderboardArea1ClearMillis = 0L;
+    private long leaderboardArea2ClearMillis = 0L;
+    private long leaderboardArea3ClearMillis = 0L;
+    private boolean leaderboardRecorded = false;
 
     public void setSwordmanCharacterChosen(boolean done) {
         this.swordmanCharacterChosen = done;
@@ -928,6 +935,62 @@ public class Hero {
         this.setSwordmanCharacterChosen(false);
         this.setMageCharacterChosen(false);
         this.setGunnerCharacterChosen(false);
+    }
+
+    public long getLeaderboardRunStartedAtMillis() {
+        return leaderboardRunStartedAtMillis;
+    }
+
+    public void setLeaderboardRunStartedAtMillis(long leaderboardRunStartedAtMillis) {
+        this.leaderboardRunStartedAtMillis = leaderboardRunStartedAtMillis;
+    }
+
+    public long getLeaderboardAccumulatedMillis() {
+        return leaderboardAccumulatedMillis;
+    }
+
+    public void setLeaderboardAccumulatedMillis(long leaderboardAccumulatedMillis) {
+        this.leaderboardAccumulatedMillis = leaderboardAccumulatedMillis;
+    }
+
+    public long getLeaderboardSessionStartedAtMillis() {
+        return leaderboardSessionStartedAtMillis;
+    }
+
+    public void setLeaderboardSessionStartedAtMillis(long leaderboardSessionStartedAtMillis) {
+        this.leaderboardSessionStartedAtMillis = leaderboardSessionStartedAtMillis;
+    }
+
+    public long getLeaderboardArea1ClearMillis() {
+        return leaderboardArea1ClearMillis;
+    }
+
+    public void setLeaderboardArea1ClearMillis(long leaderboardArea1ClearMillis) {
+        this.leaderboardArea1ClearMillis = leaderboardArea1ClearMillis;
+    }
+
+    public long getLeaderboardArea2ClearMillis() {
+        return leaderboardArea2ClearMillis;
+    }
+
+    public void setLeaderboardArea2ClearMillis(long leaderboardArea2ClearMillis) {
+        this.leaderboardArea2ClearMillis = leaderboardArea2ClearMillis;
+    }
+
+    public long getLeaderboardArea3ClearMillis() {
+        return leaderboardArea3ClearMillis;
+    }
+
+    public void setLeaderboardArea3ClearMillis(long leaderboardArea3ClearMillis) {
+        this.leaderboardArea3ClearMillis = leaderboardArea3ClearMillis;
+    }
+
+    public boolean isLeaderboardRecorded() {
+        return leaderboardRecorded;
+    }
+
+    public void setLeaderboardRecorded(boolean leaderboardRecorded) {
+        this.leaderboardRecorded = leaderboardRecorded;
     }
 
     //Reset________________________________________________________________________________________________________________________
@@ -1013,6 +1076,15 @@ public class Hero {
 
     // Reset character choice flags
     resetCharacterFlags();
+
+    // Reset leaderboard tracking
+    this.leaderboardRunStartedAtMillis = 0L;
+    this.leaderboardAccumulatedMillis = 0L;
+    this.leaderboardSessionStartedAtMillis = 0L;
+    this.leaderboardArea1ClearMillis = 0L;
+    this.leaderboardArea2ClearMillis = 0L;
+    this.leaderboardArea3ClearMillis = 0L;
+    this.leaderboardRecorded = false;
 }
 
 

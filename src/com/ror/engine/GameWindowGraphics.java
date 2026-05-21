@@ -18,6 +18,7 @@ import com.ror.models.Mobs.SwampRat;
 import com.ror.models.Mobs.VeilSerpent;
 import com.ror.models.Mobs.VoidBeast;
 import com.ror.models.Swordsman;
+import com.ror.utils.LeaderboardManager;
 import com.ror.utils.sounds.SoundManager;
 
 import javax.imageio.ImageIO;
@@ -31,12 +32,11 @@ import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import javax.imageio.ImageIO;
-import javax.swing.*;
-import javax.swing.plaf.FontUIResource;
+import java.util.List;
 
 final class GameWindowGraphics {
     private static final String UI_IMAGE_DIRECTORY = "assets/images/ui/";
@@ -69,8 +69,10 @@ final class GameWindowGraphics {
     private final BufferedImage landingLoadButtonImage;
     private final BufferedImage landingOptionsButtonImage;
     private final BufferedImage landingExitButtonImage;
+    private final BufferedImage landingLeaderboardButtonImage;
     private final BufferedImage landingAboutOverlayImage;
     private final BufferedImage landingOptionsOverlayImage;
+    private final BufferedImage landingLeaderboardOverlayImage;
 
     GameWindowGraphics() {
         loadFonts();
@@ -82,8 +84,10 @@ final class GameWindowGraphics {
         landingLoadButtonImage = loadLandingButtonImage("load-button.png");
         landingOptionsButtonImage = loadLandingButtonImage("options-button.png");
         landingExitButtonImage = loadLandingButtonImage("exit-button.png");
+        landingLeaderboardButtonImage = loadLandingButtonImage("leaderboard-button.png");
         landingAboutOverlayImage = loadAboutOverlayImage();
         landingOptionsOverlayImage = loadOptionsOverlayImage();
+        landingLeaderboardOverlayImage = loadLeaderboardOverlayImage();
     }
 
     JPanel createCardPanel(Color borderColor, Color panelColor) {
@@ -308,22 +312,38 @@ final class GameWindowGraphics {
         constraints.insets = new Insets(0, 70, 35, 0);
         backgroundPanel.add(content, constraints);
 
+        JButton leaderboardButton = landingLeaderboardButtonImage != null
+                ? createLandingImageButton(landingLeaderboardButtonImage, 144, 96, "LB")
+                : createLandingPlaceholderButton("LB", 144, 96);
+        GridBagConstraints leaderboardConstraints = new GridBagConstraints();
+        leaderboardConstraints.gridx = 0;
+        leaderboardConstraints.gridy = 0;
+        leaderboardConstraints.weightx = 1.0;
+        leaderboardConstraints.weighty = 1.0;
+        leaderboardConstraints.anchor = GridBagConstraints.NORTHEAST;
+        leaderboardConstraints.insets = new Insets(12, 0, 0, 4);
+        backgroundPanel.add(leaderboardButton, leaderboardConstraints);
+
         AboutOverlayPanel aboutOverlayPanel = new AboutOverlayPanel(landingAboutOverlayImage);
         OptionsOverlayPanel optionsOverlayPanel = new OptionsOverlayPanel(landingOptionsOverlayImage);
+        LeaderboardOverlayPanel leaderboardOverlayPanel = new LeaderboardOverlayPanel(landingLeaderboardOverlayImage);
         JLayeredPane layeredPane = new JLayeredPane() {
             @Override
             public void doLayout() {
                 backgroundPanel.setBounds(0, 0, getWidth(), getHeight());
                 aboutOverlayPanel.setBounds(0, 0, getWidth(), getHeight());
                 optionsOverlayPanel.setBounds(0, 0, getWidth(), getHeight());
+                leaderboardOverlayPanel.setBounds(0, 0, getWidth(), getHeight());
             }
         };
         layeredPane.add(backgroundPanel, JLayeredPane.DEFAULT_LAYER);
         layeredPane.add(aboutOverlayPanel, JLayeredPane.PALETTE_LAYER);
         layeredPane.add(optionsOverlayPanel, JLayeredPane.PALETTE_LAYER);
+        layeredPane.add(leaderboardOverlayPanel, JLayeredPane.PALETTE_LAYER);
 
         aboutButton.addActionListener(event -> aboutOverlayPanel.showOverlay());
         optionsButton.addActionListener(event -> optionsOverlayPanel.showOverlay());
+        leaderboardButton.addActionListener(event -> leaderboardOverlayPanel.showOverlay());
 
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.add(layeredPane, BorderLayout.CENTER);
@@ -332,18 +352,21 @@ final class GameWindowGraphics {
 
     private BufferedImage loadAboutOverlayImage() {
         return loadFirstAvailableImage(
-                "/com/ror/models/assets/images/ui/About.png",
-                "src/com/ror/models/assets/images/ui/About.png",
-                "assets/images/ui/About.png",
-                "C:/Users/Shayndel Mizy Amaga/Downloads/About.png");
+                "src/com/ror/models/assets/images/aboutscreen/about.png");
     }
-
+ 
     private BufferedImage loadOptionsOverlayImage() {
         return loadFirstAvailableImage(
-                "/com/ror/models/assets/images/ui/Option.png",
-                "src/com/ror/models/assets/images/ui/Option.png",
-                "assets/images/ui/Option.png",
-                "C:/Users/Shayndel Mizy Amaga/Downloads/Option.png");
+                "src/com/ror/models/assets/images/optionscreen/option.png");
+    }
+
+    private BufferedImage loadLeaderboardOverlayImage() {
+        return loadFirstAvailableImage(
+                "src/com/ror/models/assets/images/leaderboardscreen/leaderboard.png");
+    }
+
+    BufferedImage getLeaderboardOverlayImage() {
+        return landingLeaderboardOverlayImage;
     }
 
     private final class AboutOverlayPanel extends JComponent {
@@ -620,6 +643,198 @@ final class GameWindowGraphics {
         }
     }
 
+    private final class LeaderboardOverlayPanel extends JComponent {
+        private static final double MAX_WIDTH_RATIO = 1.0d;
+        private static final double MAX_HEIGHT_RATIO = 1.0d;
+        private static final int IMAGE_BASE_WIDTH = 1536;
+        private static final int IMAGE_BASE_HEIGHT = 1024;
+        private static final Rectangle CLOSE_BOX = new Rectangle(1410, 58, 72, 72);
+        private static final int TABLE_START_Y = 383;
+        private static final int TABLE_ROW_HEIGHT = 57;
+        private static final int MAX_ROWS = 10;
+        private static final int RANK_CENTER_X = 98;
+        private static final int FOREST_CENTER_X = 404;
+        private static final int EDGE_CENTER_X = 742;
+        private static final int FORSAKEN_CENTER_X = 1056;
+        private static final int OVERALL_CENTER_X = 1330;
+
+        private final BufferedImage leaderboardImage;
+        private final Rectangle closeBounds = new Rectangle();
+        private List<LeaderboardManager.Entry> entries = List.of();
+        private boolean hoveringClose;
+
+        private LeaderboardOverlayPanel(BufferedImage leaderboardImage) {
+            this.leaderboardImage = leaderboardImage;
+            setVisible(false);
+            setOpaque(false);
+
+            MouseAdapter mouseHandler = new MouseAdapter() {
+                @Override
+                public void mouseMoved(MouseEvent event) {
+                    updateHoverState(event.getPoint());
+                }
+
+                @Override
+                public void mouseExited(MouseEvent event) {
+                    hoveringClose = false;
+                    setCursor(Cursor.getDefaultCursor());
+                    repaint();
+                }
+
+                @Override
+                public void mouseClicked(MouseEvent event) {
+                    if (closeBounds.contains(event.getPoint())) {
+                        hideOverlay();
+                    }
+                }
+            };
+            addMouseMotionListener(mouseHandler);
+            addMouseListener(mouseHandler);
+        }
+
+        private void showOverlay() {
+            entries = LeaderboardManager.loadEntries();
+            setVisible(true);
+            requestFocusInWindow();
+            repaint();
+        }
+
+        private void hideOverlay() {
+            setVisible(false);
+            hoveringClose = false;
+            setCursor(Cursor.getDefaultCursor());
+        }
+
+        private void updateHoverState(Point point) {
+            boolean hovering = closeBounds.contains(point);
+            if (hoveringClose == hovering) {
+                return;
+            }
+            hoveringClose = hovering;
+            setCursor(hovering ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            if (!isVisible()) {
+                return;
+            }
+
+            Graphics2D g2 = (Graphics2D) graphics.create();
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g2.setColor(new Color(0, 0, 0, 185));
+            g2.fillRect(0, 0, getWidth(), getHeight());
+
+            if (leaderboardImage == null) {
+                closeBounds.setBounds(0, 0, 0, 0);
+                g2.setColor(Color.WHITE);
+                g2.setFont(getHeadingFont(24f));
+                g2.drawString("Leaderboard image not found.", Math.max(30, getWidth() / 2 - 160), getHeight() / 2);
+                g2.dispose();
+                return;
+            }
+
+            double scale = Math.min(
+                    Math.min((getWidth() * MAX_WIDTH_RATIO) / leaderboardImage.getWidth(),
+                            (getHeight() * MAX_HEIGHT_RATIO) / leaderboardImage.getHeight()),
+                    1d);
+            int drawWidth = Math.max(1, (int) Math.round(leaderboardImage.getWidth() * scale));
+            int drawHeight = Math.max(1, (int) Math.round(leaderboardImage.getHeight() * scale));
+            int drawX = (getWidth() - drawWidth) / 2;
+            int drawY = (getHeight() - drawHeight) / 2;
+
+            g2.drawImage(leaderboardImage, drawX, drawY, drawWidth, drawHeight, null);
+
+            double scaleX = drawWidth / (double) IMAGE_BASE_WIDTH;
+            double scaleY = drawHeight / (double) IMAGE_BASE_HEIGHT;
+            int closeX = drawX + (int) Math.round(CLOSE_BOX.x * scaleX);
+            int closeY = drawY + (int) Math.round(CLOSE_BOX.y * scaleY);
+            int closeWidth = Math.max(22, (int) Math.round(CLOSE_BOX.width * scaleX));
+            int closeHeight = Math.max(22, (int) Math.round(CLOSE_BOX.height * scaleY));
+            closeBounds.setBounds(closeX, closeY, closeWidth, closeHeight);
+
+            if (hoveringClose) {
+                g2.setColor(new Color(255, 255, 255, 22));
+                g2.fillRoundRect(closeX, closeY, closeWidth, closeHeight, 14, 14);
+            }
+
+            paintLeaderboardRows(g2, drawX, drawY, scaleX, scaleY);
+            g2.dispose();
+        }
+
+        private void paintLeaderboardRows(Graphics2D g2, int drawX, int drawY, double scaleX, double scaleY) {
+            if (entries.isEmpty()) {
+                g2.setColor(new Color(232, 240, 255, 210));
+                g2.setFont(getBodyFont((float) Math.max(18d, 24d * Math.min(scaleX, scaleY))).deriveFont(Font.BOLD));
+                String text = "No legends recorded yet.";
+                FontMetrics metrics = g2.getFontMetrics();
+                int centerX = drawX + (int) Math.round(IMAGE_BASE_WIDTH * scaleX / 2d);
+                int centerY = drawY + (int) Math.round(IMAGE_BASE_HEIGHT * scaleY * 0.54d);
+                g2.drawString(text, centerX - (metrics.stringWidth(text) / 2), centerY);
+                return;
+            }
+
+            Font timeFont = getBodyFont((float) Math.max(16d, 22d * Math.min(scaleX, scaleY))).deriveFont(Font.BOLD);
+            Font nameFont = getBodyFont((float) Math.max(11d, 14d * Math.min(scaleX, scaleY))).deriveFont(Font.PLAIN);
+            Font rankFont = getBodyFont((float) Math.max(16d, 22d * Math.min(scaleX, scaleY))).deriveFont(Font.BOLD);
+
+            int tableStartY = drawY + (int) Math.round(TABLE_START_Y * scaleY);
+            int rowHeight = Math.max(34, (int) Math.round(TABLE_ROW_HEIGHT * scaleY));
+
+            for (int index = 0; index < Math.min(MAX_ROWS, entries.size()); index++) {
+                LeaderboardManager.Entry entry = entries.get(index);
+                int rowCenterY = tableStartY + (index * rowHeight);
+
+                drawCellText(g2, String.valueOf(index + 1),
+                        drawX + (int) Math.round(RANK_CENTER_X * scaleX),
+                        rowCenterY + (int) Math.round(5 * scaleY),
+                        rankFont, new Color(242, 245, 255, 235));
+
+                drawTwoLineCell(
+                        g2,
+                        entry.heroName(),
+                        LeaderboardManager.formatDuration(entry.forestMillis()),
+                        drawX + (int) Math.round(FOREST_CENTER_X * scaleX),
+                        rowCenterY,
+                        nameFont,
+                        timeFont);
+
+                drawCellText(g2, LeaderboardManager.formatDuration(entry.edgeMillis()),
+                        drawX + (int) Math.round(EDGE_CENTER_X * scaleX),
+                        rowCenterY + (int) Math.round(5 * scaleY),
+                        timeFont, new Color(242, 245, 255, 232));
+                drawCellText(g2, LeaderboardManager.formatDuration(entry.forsakenMillis()),
+                        drawX + (int) Math.round(FORSAKEN_CENTER_X * scaleX),
+                        rowCenterY + (int) Math.round(5 * scaleY),
+                        timeFont, new Color(242, 245, 255, 232));
+                drawCellText(g2, LeaderboardManager.formatDuration(entry.overallMillis()),
+                        drawX + (int) Math.round(OVERALL_CENTER_X * scaleX),
+                        rowCenterY + (int) Math.round(5 * scaleY),
+                        timeFont, new Color(255, 245, 212, 240));
+            }
+        }
+
+        private void drawTwoLineCell(Graphics2D g2, String topLine, String bottomLine, int centerX, int centerY,
+                Font topFont, Font bottomFont) {
+            drawCellText(g2, topLine, centerX, centerY - 9, topFont, new Color(190, 210, 255, 210));
+            drawCellText(g2, bottomLine, centerX, centerY + 12, bottomFont, new Color(242, 245, 255, 235));
+        }
+
+        private void drawCellText(Graphics2D g2, String text, int centerX, int baselineY, Font font, Color color) {
+            g2.setFont(font);
+            FontMetrics metrics = g2.getFontMetrics(font);
+            int drawX = centerX - (metrics.stringWidth(text) / 2);
+            g2.setColor(new Color(9, 12, 28, 180));
+            g2.drawString(text, drawX + 1, baselineY + 1);
+            g2.setColor(color);
+            g2.drawString(text, drawX, baselineY);
+        }
+    }
+
     BufferedImage loadCharacterPortrait(String title) {
         String normalizedTitle = title == null ? "" : title.trim().toLowerCase().replace(' ', '-');
         String[] candidates = {
@@ -682,16 +897,9 @@ final class GameWindowGraphics {
     void updateEnemySprite(Entity enemy, BattlePanel battlePanel) {
         BufferedImage sprite = loadEnemySprite(enemy);
         if (sprite == null) {
-            BufferedImage placeholder = loadImageAsset(ENEMY_IMAGE_DIRECTORY + "placeholder.png");
-            if (placeholder != null) {
-                battlePanel.getBattleEnemySpriteLabel().setText("");
-                battlePanel.getBattleEnemySpriteLabel().setIcon(createScaledSpriteIcon(placeholder, 96, 96));
-                refreshBattleSpriteLabel(battlePanel.getBattleEnemySpriteLabel());
-            } else {
-                battlePanel.getBattleEnemySpriteLabel().setIcon(null);
-                battlePanel.getBattleEnemySpriteLabel().setText("");
-                refreshBattleSpriteLabel(battlePanel.getBattleEnemySpriteLabel());
-            }
+            battlePanel.getBattleEnemySpriteLabel().setIcon(null);
+            battlePanel.getBattleEnemySpriteLabel().setText("");
+            refreshBattleSpriteLabel(battlePanel.getBattleEnemySpriteLabel());
             return;
         }
         battlePanel.getBattleEnemySpriteLabel().setText("");
@@ -724,6 +932,17 @@ final class GameWindowGraphics {
                 ? "Fehld-Skill1.png"
                 : "Neo-Skill1.png";
         return updateHeroActionFrame(hero, battlePanel, sheetName, frameIndex);
+    }
+
+    boolean updateMageSkill1EffectFrame(BattlePanel battlePanel, int frameIndex, float progress) {
+        BufferedImage sprite = loadMageSkill1EffectFrame(frameIndex);
+        if (sprite == null) {
+            battlePanel.clearBattleEffect();
+            return false;
+        }
+
+        battlePanel.setBattleEffectIcon(createScaledSpriteIcon(sprite, 220, 220), progress, -12);
+        return true;
     }
 
     boolean updateHeroSkill2Frame(Hero hero, BattlePanel battlePanel, int frameIndex) {
@@ -913,23 +1132,100 @@ final class GameWindowGraphics {
         int safeHeight = Math.max(1, height);
 
         JButton button = new JButton(fallbackText) {
+            private static final float BASE_SCALE = 1.0f;
+            private static final float HOVER_SCALE = 1.018f;
+            private static final float PRESSED_SCALE = 0.968f;
+            private static final float SCALE_EASING = 0.24f;
+            private static final float GLOW_EASING = 0.18f;
+
+            private float visualScale = BASE_SCALE;
+            private float targetScale = BASE_SCALE;
+            private float glowAmount = 0f;
+            private float targetGlow = 0f;
+            private final Timer animationTimer = new Timer(16, event -> animateState());
+
+            {
+                setRolloverEnabled(true);
+                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+                getModel().addChangeListener(event -> updateTargets());
+                addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseEntered(MouseEvent event) {
+                        updateTargets();
+                    }
+
+                    @Override
+                    public void mouseExited(MouseEvent event) {
+                        updateTargets();
+                    }
+
+                    @Override
+                    public void mousePressed(MouseEvent event) {
+                        updateTargets();
+                    }
+
+                    @Override
+                    public void mouseReleased(MouseEvent event) {
+                        updateTargets();
+                    }
+                });
+            }
+
+            private void updateTargets() {
+                ButtonModel model = getModel();
+                if (model.isPressed()) {
+                    targetScale = PRESSED_SCALE;
+                    targetGlow = 0.18f;
+                } else if (model.isRollover()) {
+                    targetScale = HOVER_SCALE;
+                    targetGlow = 1f;
+                } else {
+                    targetScale = BASE_SCALE;
+                    targetGlow = 0f;
+                }
+
+                if (!animationTimer.isRunning()) {
+                    animationTimer.start();
+                }
+            }
+
+            private void animateState() {
+                visualScale += (targetScale - visualScale) * SCALE_EASING;
+                glowAmount += (targetGlow - glowAmount) * GLOW_EASING;
+
+                boolean scaleSettled = Math.abs(targetScale - visualScale) < 0.002f;
+                boolean glowSettled = Math.abs(targetGlow - glowAmount) < 0.02f;
+                if (scaleSettled) {
+                    visualScale = targetScale;
+                }
+                if (glowSettled) {
+                    glowAmount = targetGlow;
+                }
+                if (scaleSettled && glowSettled) {
+                    animationTimer.stop();
+                }
+                repaint();
+            }
+
             @Override
             protected void paintComponent(Graphics graphics) {
                 Graphics2D g2 = (Graphics2D) graphics.create();
                 g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
                 g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
-                int pressOffset = getModel().isPressed() ? 2 : 0;
-                int drawX = 0;
-                int drawY = pressOffset;
-                int drawWidth = Math.max(1, getWidth());
-                int drawHeight = Math.max(1, getHeight() - pressOffset);
+                int drawWidth = Math.max(1, Math.round(getWidth() * visualScale));
+                int drawHeight = Math.max(1, Math.round(getHeight() * visualScale));
+                int drawX = (getWidth() - drawWidth) / 2;
+                int drawY = (getHeight() - drawHeight) / 2;
 
-                if (getModel().isRollover() && !getModel().isPressed()) {
-                    paintImageGlow(g2, image, drawX, drawY, drawWidth, drawHeight,
-                            new Color(120, 255, 225, 150));
-                    drawY = Math.max(0, drawY - 1);
+                if (glowAmount > 0.01f) {
+                    Color glowColor = blendLandingAccent(90 + Math.round(55 * glowAmount));
+                    Color shadowColor = blendLandingShadow(55 + Math.round(45 * glowAmount));
+                    paintImageGlow(g2, image, drawX, drawY, drawWidth, drawHeight, glowColor);
+                    paintImageShadow(g2, image, drawX, drawY, drawWidth, drawHeight, shadowColor);
                 }
+
                 g2.drawImage(image, drawX, drawY, drawWidth, drawHeight, null);
                 g2.dispose();
             }
@@ -946,8 +1242,6 @@ final class GameWindowGraphics {
         button.setBorderPainted(false);
         button.setFocusPainted(false);
         button.setOpaque(false);
-        button.setRolloverEnabled(true);
-        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return button;
     }
 
@@ -965,9 +1259,35 @@ final class GameWindowGraphics {
         g2.drawImage(mask, x, y, width, height, null);
     }
 
+    private void paintImageShadow(Graphics2D g2, BufferedImage image, int x, int y, int width, int height, Color color) {
+        BufferedImage mask = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D maskGraphics = mask.createGraphics();
+        maskGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        maskGraphics.drawImage(image, 0, 0, width, height, null);
+        maskGraphics.setComposite(AlphaComposite.SrcAtop);
+        maskGraphics.setColor(color);
+        maskGraphics.fillRect(0, 0, width, height);
+        maskGraphics.dispose();
+
+        g2.drawImage(mask, x, y + 4, width, height, null);
+    }
+
+    private Color blendLandingAccent(int alpha) {
+        return new Color(151, 232, 215, Math.max(0, Math.min(255, alpha)));
+    }
+
+    private Color blendLandingShadow(int alpha) {
+        return new Color(62, 127, 115, Math.max(0, Math.min(255, alpha)));
+    }
+
     private BufferedImage loadImageAsset(String path) {
         String normalizedPath = path.replace('\\', '/');
-        String[] candidates = normalizedPath.startsWith("src/com/ror/models/")
+        boolean absolutePath = normalizedPath.matches("^[A-Za-z]:/.*");
+        String[] candidates = absolutePath
+                ? new String[] {
+                        normalizedPath
+                }
+                : normalizedPath.startsWith("src/com/ror/models/")
                 ? new String[] {
                         normalizedPath,
                         normalizedPath.substring("src/com/ror/models/".length())
@@ -1006,7 +1326,12 @@ final class GameWindowGraphics {
         };
 
         for (String root : roots) {
-            Path candidate = Path.of(root + normalizedPath);
+            Path candidate;
+            try {
+                candidate = Path.of(root + normalizedPath);
+            } catch (InvalidPathException ignored) {
+                continue;
+            }
             if (!Files.exists(candidate)) {
                 continue;
             }
@@ -1132,15 +1457,15 @@ final class GameWindowGraphics {
                 "/com/ror/models/assets/images/ui/" + fileName,
                 "src/com/ror/models/assets/images/ui/" + fileName,
                 "assets/images/ui/" + fileName,
-                "C:/Users/Shayndel Mizy Amaga/Downloads/ChatGPT Image May 15, 2026, 02_30_29 AM.png");
+                "C:/Users/Shayndel Mizy Amaga/Downloads/oopgameprojstuffsdump/ChatGPT Image May 15, 2026, 02_30_29 AM.png");
     }
 
     BufferedImage loadStoryNarrationBackgroundImage(String fileName) {
         return loadFirstAvailableImage(
-                "/com/ror/models/assets/images/ui/" + fileName,
-                "src/com/ror/models/assets/images/ui/" + fileName,
-                "assets/images/ui/" + fileName,
-                "C:/Users/Shayndel Mizy Amaga/Downloads/narration-screen.png");
+                "/com/ror/models/assets/images/narrationscreen/narration-screen.png",
+                "src/com/ror/models/assets/images/narrationscreen/narration-screen.png",
+                "assets/images/narrationscreen/narration-screen.png",
+                "C:/Users/Shayndel Mizy Amaga/Downloads/oopgameprojstuffsdump/narration-screen.png");
     }
 
     BufferedImage[] loadStoryHeroWalkFrames(Hero hero) {
@@ -1744,6 +2069,19 @@ final class GameWindowGraphics {
         }
 
         return loadNormalizedFramesFromSheet(sheet, 3);
+    }
+
+    private BufferedImage loadMageSkill1EffectFrame(int frameIndex) {
+        BufferedImage sheet = loadHeroImage("mleux/skills/skill1/skill1effects.png");
+        if (sheet == null) {
+            return null;
+        }
+
+        BufferedImage[] frames = loadNormalizedFramesFromSheet(sheet, 3);
+        if (frameIndex < 0 || frameIndex >= frames.length) {
+            return null;
+        }
+        return frames[frameIndex];
     }
 
     private BufferedImage[] loadNormalizedFramesFromSheet(BufferedImage sheet, int frameCount) {
