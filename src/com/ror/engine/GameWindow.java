@@ -201,8 +201,13 @@ public class GameWindow implements BattlePanel.BattleActionListener {
     private JButton noChoiceButton;
 
     // Battle action synchronization
+    private static final int BATTLE_TURN_SECONDS = 30;
+    private static final int BATTLE_ACTION_TIMEOUT = -2; //battle timer
     private final Object battleActionLock = new Object();
     private volatile Integer pendingBattleAction = null;
+    private Timer battleTurnTimer;
+    private int battleTurnSecondsRemaining = BATTLE_TURN_SECONDS;
+    private int battleTurnTimerGeneration = 0;
     private final transitions transitionManager = new transitions();
 
     // State
@@ -3400,24 +3405,28 @@ public class GameWindow implements BattlePanel.BattleActionListener {
                 battleLog = appendBattleLog(battleLog, hero.getName() + " is stunned and loses this turn.");
             } else {
                 int choice = chooseBattleAction(enemy, round, battleTitle, battleLog);
-                if (choice == -1) choice = 5;
-
-                if (choice == 4) { usePotionInBattle(); continue; }
-
-                if (choice == 5) {
-                    if (attemptRunAway(enemy)) {
-                        restoreHeroBattleState(originalHp, originalMana, originalCooldown1,
-                                originalCooldown2, originalCooldownU, originalStun, originalPoison);
-                        return BattleOutcome.RAN;
-                    }
-                    battleLog = appendBattleLog(battleLog, "Retreat failed.");
+                if (choice == BATTLE_ACTION_TIMEOUT) { //this is for the battle timer, player has n seconds to make a move before turn ends and enemy will move
+                    battleLog = appendBattleLog(battleLog, hero.getName() + " hesitated too long.");
                 } else {
-                    String result = performPlayerAction(choice, enemy);
-                    if (result.startsWith("INVALID:")) {
-                        showInfoSync("Battle", result.replace("INVALID:", "").trim());
-                        continue;
+                    if (choice == -1) choice = 5;
+
+                    if (choice == 4) { usePotionInBattle(); continue; }
+
+                    if (choice == 5) {
+                        if (attemptRunAway(enemy)) {
+                            restoreHeroBattleState(originalHp, originalMana, originalCooldown1,
+                                    originalCooldown2, originalCooldownU, originalStun, originalPoison);
+                            return BattleOutcome.RAN;
+                        }
+                        battleLog = appendBattleLog(battleLog, "Retreat failed.");
+                    } else {
+                        String result = performPlayerAction(choice, enemy);
+                        if (result.startsWith("INVALID:")) {
+                            showInfoSync("Battle", result.replace("INVALID:", "").trim());
+                            continue;
+                        }
+                        battleLog = appendBattleLog(battleLog, result);
                     }
-                    battleLog = appendBattleLog(battleLog, result);
                 }
             }
 
@@ -3475,6 +3484,9 @@ public class GameWindow implements BattlePanel.BattleActionListener {
     }
 
     private int chooseBattleAction(Entity enemy, int round, String battleTitle, String battleLog) {
+        synchronized (battleActionLock) {
+            pendingBattleAction = null;
+        }
         runOnEdtSync(() -> {
             battlePanel.restoreBattleButtons();
             battlePanel.setBattleBackgroundForArea(battleTitle);
@@ -3492,8 +3504,11 @@ public class GameWindow implements BattlePanel.BattleActionListener {
             showScreen(SCREEN_BATTLE);
             battlePanel.setBattleButtonsEnabled(true);
             battlePanel.updateHeroActionButtonCooldowns(hero);
+            startBattleTurnTimer();
         });
-        return waitForBattleAction();
+        int action = waitForBattleAction();
+        runOnEdtSync(this::stopBattleTurnTimer);
+        return action;
     }
 
     private void updateBattleBars(Entity enemy) {
@@ -3523,14 +3538,16 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         synchronized (battleActionLock) {
             if (pendingBattleAction != null) return;
             pendingBattleAction = action;
-            runOnEdtSync(() -> battlePanel.setBattleButtonsEnabled(false));
+            runOnEdtSync(() -> {
+                stopBattleTurnTimer();
+                battlePanel.setBattleButtonsEnabled(false);
+            });
             battleActionLock.notifyAll();
         }
     }
 
     private int waitForBattleAction() {
         synchronized (battleActionLock) {
-            pendingBattleAction = null;
             while (pendingBattleAction == null) {
                 try {
                     battleActionLock.wait();
@@ -3542,6 +3559,37 @@ public class GameWindow implements BattlePanel.BattleActionListener {
             int action = pendingBattleAction;
             pendingBattleAction = null;
             return action;
+        }
+    }
+
+    private void startBattleTurnTimer() {
+        stopBattleTurnTimer();
+        battleTurnSecondsRemaining = BATTLE_TURN_SECONDS;
+        int timerGeneration = ++battleTurnTimerGeneration;
+        battlePanel.getBattleTimerLabel().setText(battleTurnSecondsRemaining + "s");
+
+        battleTurnTimer = new Timer(1000, event -> {
+            if (timerGeneration != battleTurnTimerGeneration) {
+                ((Timer) event.getSource()).stop();
+                return;
+            }
+
+            battleTurnSecondsRemaining--;
+            battlePanel.getBattleTimerLabel().setText(Math.max(0, battleTurnSecondsRemaining) + "s");
+
+            if (battleTurnSecondsRemaining <= 0) {
+                ((Timer) event.getSource()).stop();
+                submitBattleAction(BATTLE_ACTION_TIMEOUT);
+            }
+        });
+        battleTurnTimer.start();
+    }
+
+    private void stopBattleTurnTimer() {
+        battleTurnTimerGeneration++;
+        if (battleTurnTimer != null) {
+            battleTurnTimer.stop();
+            battleTurnTimer = null;
         }
     }
 
