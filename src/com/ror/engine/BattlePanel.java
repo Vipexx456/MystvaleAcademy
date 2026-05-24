@@ -1,13 +1,12 @@
 package com.ror.engine;
 
 import com.ror.models.Hero;
-
-import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import javax.imageio.ImageIO;
+import javax.swing.*;
 
 public class BattlePanel extends JPanel {
     private static final String COMBAT_IMAGE_DIRECTORY = "src/com/ror/models/assets/images/combat/";
@@ -47,6 +46,12 @@ public class BattlePanel extends JPanel {
     private float battleEffectProgress = -1f;
     private int battleEffectVerticalOffset;
     private BufferedImage battleArenaBackgroundImage;
+
+        //battle timer fields
+        private final JLabel battleTimerLabel = new JLabel("30s", SwingConstants.CENTER);
+        private Timer swingTimer;
+        private int remainingSeconds = 30;
+        private Runnable onTimeOutCallback;
 
     // Colors
     private static final Color COLOR_BATTLE_PANEL = new Color(0x00041B);
@@ -110,6 +115,7 @@ public class BattlePanel extends JPanel {
         JPanel titleWrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 22, 10));
         titleWrap.setOpaque(false);
         titleWrap.add(battleTitleValue);
+        titleWrap.add(battleTimerLabel); // battle timer
 
         JPanel enemyWrap = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 20));
         enemyWrap.setOpaque(false);
@@ -198,6 +204,10 @@ public class BattlePanel extends JPanel {
         bottomRow.setBorder(BorderFactory.createEmptyBorder(0, 16, 0, 0));
         bottomRow.add(heroPanel, BorderLayout.WEST);
         bottomRow.add(battleActionCards, BorderLayout.CENTER);
+
+        battleTimerLabel.setFont(getHeadingFont(24f).deriveFont(Font.BOLD));
+        battleTimerLabel.setForeground(Color.decode("#FFD700")); //color: gold
+        battleTimerLabel.setPreferredSize(new Dimension(80, 40)); //size
 
         add(bottomRow);
         add(Box.createVerticalStrut(12));
@@ -724,6 +734,37 @@ public class BattlePanel extends JPanel {
         }
     }
 
+    //this is for the battle timer, player has this.remainingSeconds seconds to make a move before enemy will move
+    public void startTurnTimer(Runnable onTimeOut) {
+        stopTurnTimer(); // to stop overlapping timers
+        this.onTimeOutCallback = onTimeOut;
+        this.remainingSeconds = 30;
+        
+        battleTimerLabel.setText("30s");
+        battleTimerLabel.setForeground(Color.decode("#00ff26")); // Reset to gold
+
+        swingTimer = new Timer(1000, event -> {
+            remainingSeconds--;
+            battleTimerLabel.setText(remainingSeconds + "s");
+
+            // if 10, yellow, if 5, red because hehe
+            if (remainingSeconds <= 10 && remainingSeconds > 5) {
+                battleTimerLabel.setForeground(Color.ORANGE);
+            } else if (remainingSeconds <= 5) {
+                battleTimerLabel.setForeground(Color.RED);
+            }
+
+        });
+        swingTimer.start();
+    }
+
+    //stop the battle timer, usually called if player moves before timer runs out
+    public void stopTurnTimer() {
+        if (swingTimer != null && swingTimer.isRunning()) {
+            swingTimer.stop();
+        }
+    }
+
     // Getters for updating UI
     public JLabel getBattleTitleValue() {
         return battleTitleValue;
@@ -771,5 +812,8 @@ public class BattlePanel extends JPanel {
 
     public JLabel getBattleEnemySpriteLabel() {
         return battleEnemySpriteLabel;
+    }
+    public JLabel getBattleTimerLabel() {
+    return battleTimerLabel;
     }
 }

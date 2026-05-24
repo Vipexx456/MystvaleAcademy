@@ -14,6 +14,11 @@ public class MobBattleMechanic {
     public static boolean run = false;
     DecimalFormat df = new DecimalFormat("#,##0");
 
+    private javax.swing.Timer turnTimer;
+    private int remainingSeconds = 30;
+
+    
+
     public boolean fight(Hero player, Entity enemy) {
         enemy.setManaCap(enemy.getMana());
         setOriginalStats(player);
