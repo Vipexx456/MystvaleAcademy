@@ -2402,6 +2402,11 @@ public class GameWindow implements BattlePanel.BattleActionListener {
                 private static final int EDGE_CENTER_X = 742;
                 private static final int FORSAKEN_CENTER_X = 1056;
                 private static final int OVERALL_CENTER_X = 1330;
+                private static final int RANK_CELL_WIDTH = 76;
+                private static final int FOREST_CELL_WIDTH = 270;
+                private static final int EDGE_CELL_WIDTH = 224;
+                private static final int FORSAKEN_CELL_WIDTH = 224;
+                private static final int OVERALL_CELL_WIDTH = 198;
                 private final Rectangle closeBounds = new Rectangle();
                 private boolean hoveringClose;
 
@@ -2504,27 +2509,33 @@ public class GameWindow implements BattlePanel.BattleActionListener {
                         drawLeaderboardCellText(g2, String.valueOf(index + 1),
                                 drawX + (int) Math.round(RANK_CENTER_X * scaleX),
                                 rowCenterY + (int) Math.round(5 * scaleY),
-                                rankFont, new Color(242, 245, 255, 235));
+                                rankFont, new Color(242, 245, 255, 235),
+                                Math.max(28, (int) Math.round(RANK_CELL_WIDTH * scaleX)), 16f);
                         drawLeaderboardCellText(g2, entry.heroName(),
                                 drawX + (int) Math.round(FOREST_CENTER_X * scaleX),
                                 rowCenterY - 9,
-                                nameFont, new Color(190, 210, 255, 210));
+                                nameFont, new Color(190, 210, 255, 210),
+                                Math.max(110, (int) Math.round(FOREST_CELL_WIDTH * scaleX)), 9f);
                         drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.forestMillis()),
                                 drawX + (int) Math.round(FOREST_CENTER_X * scaleX),
                                 rowCenterY + 12,
-                                timeFont, new Color(242, 245, 255, 235));
+                                timeFont, new Color(242, 245, 255, 235),
+                                Math.max(110, (int) Math.round(FOREST_CELL_WIDTH * scaleX)), 14f);
                         drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.edgeMillis()),
                                 drawX + (int) Math.round(EDGE_CENTER_X * scaleX),
                                 rowCenterY + (int) Math.round(5 * scaleY),
-                                timeFont, new Color(242, 245, 255, 232));
+                                timeFont, new Color(242, 245, 255, 232),
+                                Math.max(92, (int) Math.round(EDGE_CELL_WIDTH * scaleX)), 14f);
                         drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.forsakenMillis()),
                                 drawX + (int) Math.round(FORSAKEN_CENTER_X * scaleX),
                                 rowCenterY + (int) Math.round(5 * scaleY),
-                                timeFont, new Color(242, 245, 255, 232));
+                                timeFont, new Color(242, 245, 255, 232),
+                                Math.max(92, (int) Math.round(FORSAKEN_CELL_WIDTH * scaleX)), 14f);
                         drawLeaderboardCellText(g2, LeaderboardManager.formatDuration(entry.overallMillis()),
                                 drawX + (int) Math.round(OVERALL_CENTER_X * scaleX),
                                 rowCenterY + (int) Math.round(5 * scaleY),
-                                timeFont, new Color(255, 245, 212, 240));
+                                timeFont, new Color(255, 245, 212, 240),
+                                Math.max(84, (int) Math.round(OVERALL_CELL_WIDTH * scaleX)), 14f);
                     }
 
                     g2.dispose();
@@ -2540,14 +2551,47 @@ public class GameWindow implements BattlePanel.BattleActionListener {
         });
     }
 
-    private void drawLeaderboardCellText(Graphics2D g2, String text, int centerX, int baselineY, Font font, Color color) {
-        g2.setFont(font);
-        FontMetrics metrics = g2.getFontMetrics(font);
-        int drawX = centerX - (metrics.stringWidth(text) / 2);
+    private void drawLeaderboardCellText(Graphics2D g2, String text, int centerX, int baselineY, Font font, Color color,
+            int maxWidth, float minFontSize) {
+        Font fittedFont = fitLeaderboardFontToWidth(g2, font, text, maxWidth, minFontSize);
+        String fittedText = ellipsizeLeaderboardText(g2, text, fittedFont, maxWidth);
+        g2.setFont(fittedFont);
+        FontMetrics metrics = g2.getFontMetrics(fittedFont);
+        int drawX = centerX - (metrics.stringWidth(fittedText) / 2);
         g2.setColor(new Color(9, 12, 28, 180));
-        g2.drawString(text, drawX + 1, baselineY + 1);
+        g2.drawString(fittedText, drawX + 1, baselineY + 1);
         g2.setColor(color);
-        g2.drawString(text, drawX, baselineY);
+        g2.drawString(fittedText, drawX, baselineY);
+    }
+
+    private Font fitLeaderboardFontToWidth(Graphics2D g2, Font baseFont, String text, int maxWidth, float minFontSize) {
+        Font candidate = baseFont;
+        FontMetrics metrics = g2.getFontMetrics(candidate);
+        while (metrics.stringWidth(text) > maxWidth && candidate.getSize2D() > minFontSize) {
+            candidate = candidate.deriveFont(Math.max(minFontSize, candidate.getSize2D() - 1f));
+            metrics = g2.getFontMetrics(candidate);
+        }
+        return candidate;
+    }
+
+    private String ellipsizeLeaderboardText(Graphics2D g2, String text, Font font, int maxWidth) {
+        FontMetrics metrics = g2.getFontMetrics(font);
+        if (metrics.stringWidth(text) <= maxWidth) {
+            return text;
+        }
+
+        String ellipsis = "...";
+        int ellipsisWidth = metrics.stringWidth(ellipsis);
+        if (ellipsisWidth >= maxWidth) {
+            return ellipsis;
+        }
+
+        StringBuilder builder = new StringBuilder(text);
+        while (builder.length() > 0
+                && metrics.stringWidth(builder + ellipsis) > maxWidth) {
+            builder.deleteCharAt(builder.length() - 1);
+        }
+        return builder + ellipsis;
     }
 
     private void refreshAreaButtons() {

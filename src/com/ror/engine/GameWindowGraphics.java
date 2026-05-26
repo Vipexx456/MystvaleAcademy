@@ -657,6 +657,11 @@ final class GameWindowGraphics {
         private static final int EDGE_CENTER_X = 742;
         private static final int FORSAKEN_CENTER_X = 1056;
         private static final int OVERALL_CENTER_X = 1330;
+        private static final int RANK_CELL_WIDTH = 76;
+        private static final int FOREST_CELL_WIDTH = 270;
+        private static final int EDGE_CELL_WIDTH = 224;
+        private static final int FORSAKEN_CELL_WIDTH = 224;
+        private static final int OVERALL_CELL_WIDTH = 198;
 
         private final BufferedImage leaderboardImage;
         private final Rectangle closeBounds = new Rectangle();
@@ -792,7 +797,8 @@ final class GameWindowGraphics {
                 drawCellText(g2, String.valueOf(index + 1),
                         drawX + (int) Math.round(RANK_CENTER_X * scaleX),
                         rowCenterY + (int) Math.round(5 * scaleY),
-                        rankFont, new Color(242, 245, 255, 235));
+                        rankFont, new Color(242, 245, 255, 235),
+                        Math.max(28, (int) Math.round(RANK_CELL_WIDTH * scaleX)), 16f);
 
                 drawTwoLineCell(
                         g2,
@@ -801,37 +807,74 @@ final class GameWindowGraphics {
                         drawX + (int) Math.round(FOREST_CENTER_X * scaleX),
                         rowCenterY,
                         nameFont,
-                        timeFont);
+                        timeFont,
+                        Math.max(110, (int) Math.round(FOREST_CELL_WIDTH * scaleX)));
 
                 drawCellText(g2, LeaderboardManager.formatDuration(entry.edgeMillis()),
                         drawX + (int) Math.round(EDGE_CENTER_X * scaleX),
                         rowCenterY + (int) Math.round(5 * scaleY),
-                        timeFont, new Color(242, 245, 255, 232));
+                        timeFont, new Color(242, 245, 255, 232),
+                        Math.max(92, (int) Math.round(EDGE_CELL_WIDTH * scaleX)), 14f);
                 drawCellText(g2, LeaderboardManager.formatDuration(entry.forsakenMillis()),
                         drawX + (int) Math.round(FORSAKEN_CENTER_X * scaleX),
                         rowCenterY + (int) Math.round(5 * scaleY),
-                        timeFont, new Color(242, 245, 255, 232));
+                        timeFont, new Color(242, 245, 255, 232),
+                        Math.max(92, (int) Math.round(FORSAKEN_CELL_WIDTH * scaleX)), 14f);
                 drawCellText(g2, LeaderboardManager.formatDuration(entry.overallMillis()),
                         drawX + (int) Math.round(OVERALL_CENTER_X * scaleX),
                         rowCenterY + (int) Math.round(5 * scaleY),
-                        timeFont, new Color(255, 245, 212, 240));
+                        timeFont, new Color(255, 245, 212, 240),
+                        Math.max(84, (int) Math.round(OVERALL_CELL_WIDTH * scaleX)), 14f);
             }
         }
 
         private void drawTwoLineCell(Graphics2D g2, String topLine, String bottomLine, int centerX, int centerY,
-                Font topFont, Font bottomFont) {
-            drawCellText(g2, topLine, centerX, centerY - 9, topFont, new Color(190, 210, 255, 210));
-            drawCellText(g2, bottomLine, centerX, centerY + 12, bottomFont, new Color(242, 245, 255, 235));
+                Font topFont, Font bottomFont, int maxWidth) {
+            drawCellText(g2, topLine, centerX, centerY - 9, topFont, new Color(190, 210, 255, 210), maxWidth, 9f);
+            drawCellText(g2, bottomLine, centerX, centerY + 12, bottomFont, new Color(242, 245, 255, 235), maxWidth, 14f);
         }
 
-        private void drawCellText(Graphics2D g2, String text, int centerX, int baselineY, Font font, Color color) {
-            g2.setFont(font);
-            FontMetrics metrics = g2.getFontMetrics(font);
-            int drawX = centerX - (metrics.stringWidth(text) / 2);
+        private void drawCellText(Graphics2D g2, String text, int centerX, int baselineY, Font font, Color color,
+                int maxWidth, float minFontSize) {
+            Font fittedFont = fitFontToWidth(g2, font, text, maxWidth, minFontSize);
+            String fittedText = ellipsizeText(g2, text, fittedFont, maxWidth);
+            g2.setFont(fittedFont);
+            FontMetrics metrics = g2.getFontMetrics(fittedFont);
+            int drawX = centerX - (metrics.stringWidth(fittedText) / 2);
             g2.setColor(new Color(9, 12, 28, 180));
-            g2.drawString(text, drawX + 1, baselineY + 1);
+            g2.drawString(fittedText, drawX + 1, baselineY + 1);
             g2.setColor(color);
-            g2.drawString(text, drawX, baselineY);
+            g2.drawString(fittedText, drawX, baselineY);
+        }
+
+        private Font fitFontToWidth(Graphics2D g2, Font baseFont, String text, int maxWidth, float minFontSize) {
+            Font candidate = baseFont;
+            FontMetrics metrics = g2.getFontMetrics(candidate);
+            while (metrics.stringWidth(text) > maxWidth && candidate.getSize2D() > minFontSize) {
+                candidate = candidate.deriveFont(Math.max(minFontSize, candidate.getSize2D() - 1f));
+                metrics = g2.getFontMetrics(candidate);
+            }
+            return candidate;
+        }
+
+        private String ellipsizeText(Graphics2D g2, String text, Font font, int maxWidth) {
+            FontMetrics metrics = g2.getFontMetrics(font);
+            if (metrics.stringWidth(text) <= maxWidth) {
+                return text;
+            }
+
+            String ellipsis = "...";
+            int ellipsisWidth = metrics.stringWidth(ellipsis);
+            if (ellipsisWidth >= maxWidth) {
+                return ellipsis;
+            }
+
+            StringBuilder builder = new StringBuilder(text);
+            while (builder.length() > 0
+                    && metrics.stringWidth(builder + ellipsis) > maxWidth) {
+                builder.deleteCharAt(builder.length() - 1);
+            }
+            return builder + ellipsis;
         }
     }
 
