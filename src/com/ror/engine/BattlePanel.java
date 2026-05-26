@@ -741,7 +741,7 @@ public class BattlePanel extends JPanel {
         this.remainingSeconds = 30;
         
         battleTimerLabel.setText("30s");
-        battleTimerLabel.setForeground(Color.decode("#00ff26")); // Reset to gold
+        battleTimerLabel.setForeground(Color.decode("#ffffff"));
 
         swingTimer = new Timer(1000, event -> {
             remainingSeconds--;
